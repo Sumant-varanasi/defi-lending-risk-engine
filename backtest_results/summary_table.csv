@@ -1,0 +1,4 @@
+Policy,Total liquidations,Bonus paid (USD),Bad debt (USD),Avg capital efficiency,Positions surviving
+Static-Aggressive (80/85),2329,164022.5,5663.63,33.31%,91.2%
+Static-Conservative (60/65),1205,86075.1,123.31,23.64%,98.6%
+Dynamic (vol-responsive),849,44481.7,1318.07,16.32%,95.8%

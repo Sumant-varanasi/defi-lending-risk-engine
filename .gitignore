@@ -1,0 +1,34 @@
+# Solidity / Foundry
+contracts/out/
+contracts/cache/
+contracts/lib/
+contracts/broadcast/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Data
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Secrets
+.env
+.env.local
+
+# ABIs (regenerable; uncomment to track them)
+python/abi/*.json
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
