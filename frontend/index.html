@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Risk Engine — Lending Terminal</title>
+
+<!--
+  Single-file frontend for defi-lending-risk-engine.
+  Open this file directly in Chrome with MetaMask installed.
+
+  BEFORE FIRST USE — fill in your contract addresses in the CONFIG block at the
+  bottom of this file (search for "CONFIG = {"). You get these addresses after
+  running `forge script ... Deploy.s.sol` and copying them from the deploy log.
+
+  MetaMask network setup (one-time):
+    Network name:    Anvil Local
+    RPC URL:         http://127.0.0.1:8545
+    Chain ID:        31337
+    Currency symbol: ETH
+
+  Import an Anvil test account (one-time) — copy the FIRST private key shown
+  in your `anvil` terminal output and "Import account" in MetaMask. That
+  account starts with 10000 ETH and can call any admin function.
+-->
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:           #0c0c0e;
+  --bg-elevated:  #131316;
+  --bg-sunken:    #08080a;
+  --border:       #1f1f23;
+  --border-bright:#2e2e35;
+  --text:         #efeae0;
+  --text-muted:   #8a857b;
+  --text-dim:     #5b574f;
+  --accent:       #c8ff00;
+  --accent-dim:   #7a9900;
+  --warn:         #ff6b35;
+  --good:         #6dd66f;
+  --bad:          #ff5757;
+}
+
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); }
+body {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'ss01', 'cv11';
+  background-image:
+    radial-gradient(at 12% 8%, rgba(200, 255, 0, 0.03) 0px, transparent 50%),
+    radial-gradient(at 88% 95%, rgba(255, 107, 53, 0.02) 0px, transparent 50%);
+  min-height: 100vh;
+}
+
+.font-serif   { font-family: 'Fraunces', Georgia, serif; font-feature-settings: 'ss01'; }
+.font-mono    { font-family: 'JetBrains Mono', ui-monospace, monospace; font-feature-settings: 'tnum', 'zero'; }
+.font-sans    { font-family: 'Geist', system-ui, sans-serif; }
+
+.num          { font-family: 'JetBrains Mono', ui-monospace, monospace; font-feature-settings: 'tnum', 'zero'; }
+.label        { font-family: 'Geist', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; color: var(--text-muted); font-weight: 500; }
+.label-bright { color: var(--text); }
+
+.divider      { height: 1px; background: var(--border); }
+.divider-v    { width: 1px; background: var(--border); }
+
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  position: relative;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 12px;
+  height: 1px;
+  background: var(--accent);
+}
+
+.btn {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: 10px 16px;
+  border: 1px solid var(--border-bright);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  background: #1a1a1e;
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #0a0a0a;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #d4ff33;
+  border-color: #d4ff33;
+}
+.btn-danger {
+  background: transparent;
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+input.field, select.field {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-feature-settings: 'tnum';
+  font-size: 14px;
+  width: 100%;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+input.field:focus, select.field:focus {
+  border-color: var(--accent-dim);
+}
+
+select.field {
+  font-family: 'Geist', system-ui, sans-serif;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6' fill='none'%3E%3Cpath d='M1 1L4 4L7 1' stroke='%238a857b' stroke-width='1.2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+.pulse-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--good);
+  display: inline-block;
+  box-shadow: 0 0 8px var(--good);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+.tick-row { display: grid; grid-template-columns: 1fr auto; align-items: baseline; padding: 6px 0; }
+.tick-row + .tick-row { border-top: 1px dotted var(--border); }
+
+.hf-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-sunken);
+  position: relative;
+  overflow: hidden;
+}
+.hf-bar-fill {
+  height: 100%;
+  transition: width 400ms ease, background-color 400ms ease;
+}
+
+.title-rule {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.title-rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  max-width: 420px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  padding: 14px 18px;
+  z-index: 50;
+  transform: translateY(120%);
+  transition: transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.toast.active { transform: translateY(0); }
+.toast.ok    { border-left: 3px solid var(--good); }
+.toast.err   { border-left: 3px solid var(--bad); }
+.toast.info  { border-left: 3px solid var(--accent); }
+
+.ticker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+a.link { color: var(--text-muted); text-decoration: none; border-bottom: 1px dotted var(--text-dim); }
+a.link:hover { color: var(--text); border-bottom-color: var(--text-muted); }
+
+.scanline {
+  position: relative;
+  overflow: hidden;
+}
+.scanline::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0px,
+    transparent 3px,
+    rgba(255, 255, 255, 0.008) 3px,
+    rgba(255, 255, 255, 0.008) 4px
+  );
+  pointer-events: none;
+}
+</style>
+</head>
+
+<body>
+
+<!-- ========================== HEADER ========================== -->
+<header class="border-b" style="border-color: var(--border)">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-baseline gap-4">
+      <div class="font-serif text-2xl" style="font-weight: 500; letter-spacing: -0.01em;">
+        RISK·ENGINE
+      </div>
+      <div class="label">Lending Terminal &nbsp;/&nbsp; v0.1</div>
+    </div>
+    <div class="flex items-center gap-6">
+      <div id="network-status" class="ticker flex items-center gap-2">
+        <span class="pulse-dot" style="background: var(--text-dim); box-shadow: none;"></span>
+        <span>not connected</span>
+      </div>
+      <button id="connect-btn" class="btn btn-primary">Connect Wallet</button>
+    </div>
+  </div>
+</header>
+
+<!-- ========================== MAIN ========================== -->
+<main class="max-w-7xl mx-auto px-6 py-8">
+
+  <!-- Page title -->
+  <div class="mb-10">
+    <div class="title-rule mb-2">
+      <h1 class="font-serif text-5xl" style="font-weight: 500; letter-spacing: -0.02em; line-height: 1;">
+        Lending Pool
+      </h1>
+    </div>
+    <p class="text-sm" style="color: var(--text-muted); max-width: 60ch;">
+      An overcollateralized borrowing protocol with a dynamic-LTV risk engine.
+      Deposit assets to earn yield. Borrow against your collateral with adaptive limits.
+    </p>
+  </div>
+
+  <!-- ============== POOL OVERVIEW ============== -->
+  <section class="mb-12">
+    <div class="title-rule mb-4">
+      <h2 class="label label-bright">Pool Overview</h2>
+    </div>
+    <div id="reserves-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- reserve cards inserted here -->
+      <div class="card p-5 scanline">
+        <div class="ticker mb-3">— awaiting connection</div>
+        <div class="font-serif text-3xl" style="color: var(--text-dim);">··· / ···</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== USER POSITION ============== -->
+  <section class="mb-12">
+    <div class="title-rule mb-4">
+      <h2 class="label label-bright">Your Position</h2>
+    </div>
+
+    <div class="card p-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div>
+          <div class="label mb-2">Total Collateral</div>
+          <div class="num text-3xl" id="user-coll" style="font-weight: 600;">—</div>
+          <div class="ticker mt-1" id="user-coll-usd">$—</div>
+        </div>
+        <div>
+          <div class="label mb-2">Total Debt</div>
+          <div class="num text-3xl" id="user-debt" style="font-weight: 600;">—</div>
+          <div class="ticker mt-1" id="user-debt-usd">$—</div>
+        </div>
+        <div>
+          <div class="label mb-2">Available to Borrow</div>
+          <div class="num text-3xl" id="user-avail" style="font-weight: 600;">—</div>
+          <div class="ticker mt-1">$, against current collateral</div>
+        </div>
+        <div>
+          <div class="label mb-2">Health Factor</div>
+          <div class="num text-3xl" id="user-hf" style="font-weight: 600;">—</div>
+          <div class="hf-bar mt-3">
+            <div class="hf-bar-fill" id="hf-bar-fill" style="width: 0%; background: var(--text-dim);"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider my-6"></div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div>
+          <div class="label mb-3">Per-Asset Breakdown</div>
+          <div id="user-positions" class="space-y-2">
+            <div class="ticker" style="color: var(--text-dim);">— no positions —</div>
+          </div>
+        </div>
+        <div>
+          <div class="label mb-3">Wallet Balances</div>
+          <div id="wallet-balances" class="space-y-2">
+            <div class="ticker" style="color: var(--text-dim);">— wallet not connected —</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== ACTIONS ============== -->
+  <section class="mb-12">
+    <div class="title-rule mb-4">
+      <h2 class="label label-bright">Actions</h2>
+    </div>
+
+    <div class="card p-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <div>
+          <label class="label block mb-2">Asset</label>
+          <select id="action-asset" class="field" disabled>
+            <option>— connect first —</option>
+          </select>
+        </div>
+        <div>
+          <label class="label block mb-2">Amount</label>
+          <input id="action-amount" type="text" class="field" placeholder="0.00" disabled />
+        </div>
+        <div class="flex items-end">
+          <button id="max-btn" class="btn w-full" disabled>Use max wallet balance</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <button id="approve-btn" class="btn" disabled>1. Approve</button>
+        <button id="deposit-btn" class="btn btn-primary" disabled>Deposit</button>
+        <button id="withdraw-btn" class="btn" disabled>Withdraw</button>
+        <button id="borrow-btn" class="btn" disabled>Borrow</button>
+        <button id="repay-btn" class="btn" disabled>Repay</button>
+      </div>
+
+      <div class="divider my-5"></div>
+
+      <div class="ticker" style="line-height: 1.7;">
+        <span style="color: var(--text)">DEPOSIT</span> supplies collateral and earns yield from borrowers ·
+        <span style="color: var(--text)">WITHDRAW</span> returns supplied tokens ·
+        <span style="color: var(--text)">BORROW</span> takes a loan against your collateral ·
+        <span style="color: var(--text)">REPAY</span> pays back debt + accrued interest ·
+        <span style="color: var(--warn)">approval is required before deposit/repay</span> for ERC-20 tokens.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== ADMIN HINT ============== -->
+  <section class="mb-16">
+    <div class="card p-5" style="background: transparent; border-color: var(--border);">
+      <div class="grid md:grid-cols-3 gap-6 items-baseline">
+        <div>
+          <div class="label mb-2">Want to crash a price?</div>
+          <div class="ticker" style="line-height: 1.7;">
+            Use cast from the project root:<br>
+            <span class="font-mono" style="color: var(--accent-dim); font-size: 11px;">
+              cast send $ORACLE "setPrice(address,uint256)" $WETH 1000000000000000000000
+            </span>
+          </div>
+        </div>
+        <div>
+          <div class="label mb-2">Run the liquidator bot</div>
+          <div class="ticker" style="line-height: 1.7;">
+            From project root, with a populated <span class="font-mono">.env</span>:<br>
+            <span class="font-mono" style="color: var(--accent-dim); font-size: 11px;">
+              PYTHONPATH=. python -m python.liquidator.bot
+            </span>
+          </div>
+        </div>
+        <div>
+          <div class="label mb-2">Risk engine recommendations</div>
+          <div class="ticker" style="line-height: 1.7;">
+            See the Streamlit dashboard for dynamic LTV recommendations:<br>
+            <span class="font-mono" style="color: var(--accent-dim); font-size: 11px;">
+              streamlit run python/dashboard/app.py
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ========================== FOOTER ========================== -->
+<footer class="border-t" style="border-color: var(--border)">
+  <div class="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+    <div class="ticker">
+      <span style="color: var(--text-dim)">// </span>
+      mock oracle · local anvil chain ID 31337 · contract addresses in CONFIG block
+    </div>
+    <div class="ticker">
+      <a class="link" href="https://github.com/Sumant-varanasi/defi-lending-risk-engine" target="_blank">source ↗</a>
+    </div>
+  </div>
+</footer>
+
+<!-- ========================== TOAST ========================== -->
+<div id="toast" class="toast">
+  <div id="toast-title" class="label label-bright mb-1">—</div>
+  <div id="toast-body" class="ticker" style="color: var(--text); line-height: 1.5;">—</div>
+</div>
+
+<!-- ========================================================================
+                                 JAVASCRIPT
+======================================================================== -->
+<script>
+"use strict";
+
+// ============================================================================
+// CONFIG
+// ============================================================================
+// These are the deterministic Anvil addresses produced by running the project's
+// `forge script script/Deploy.s.sol` with the default Anvil account. They will
+// be exactly the same on every fresh `anvil` start, every machine, because
+// Anvil uses the same default mnemonic.
+//
+// If you re-deploy with a different account, run from a different starting
+// nonce, or deploy to a testnet, replace these with your new addresses.
+const CONFIG = {
+  chainId: 31337,
+  rpcUrl: "http://127.0.0.1:8545",
+
+  pool:    "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+  oracle:  "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+
+  assets: [
+    { symbol: "WETH", address: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9", decimals: 18, isCollateral: true, isBorrowable: false },
+    { symbol: "USDC", address: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9", decimals: 6,  isCollateral: true, isBorrowable: true  },
+    { symbol: "WBTC", address: "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707", decimals: 8,  isCollateral: true, isBorrowable: false },
+  ],
+};
+
+// ============================================================================
+// MINIMAL ABIs — just the functions this frontend needs
+// ============================================================================
+const POOL_ABI = [
+  "function deposit(address asset, uint256 amount) external",
+  "function withdraw(address asset, uint256 amount) external",
+  "function borrow(address asset, uint256 amount) external",
+  "function repay(address asset, uint256 amount) external returns (uint256)",
+  "function getUserAccountData(address user) external view returns (uint256 totalCollateralUsdWad, uint256 totalDebtUsdWad, uint256 availableBorrowsUsdWad, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactorWad)",
+  "function getUserReserveData(address user, address asset) external view returns (uint256 supply, uint256 debt, bool useAsCollateral)",
+  "function getReservesList() external view returns (address[])",
+  "function reserves(address) external view returns (uint128 liquidityIndex, uint128 borrowIndex, uint40 lastUpdate, uint256 totalScaledSupply, uint256 totalScaledBorrow, uint256 accruedToTreasuryScaled, uint16 ltvBps, uint16 liquidationThresholdBps, uint16 liquidationBonusBps, uint16 reserveFactorBps, address interestRateModel, bool active, bool borrowEnabled, bool usableAsCollateral)",
+];
+
+const ERC20_ABI = [
+  "function balanceOf(address account) external view returns (uint256)",
+  "function approve(address spender, uint256 amount) external returns (bool)",
+  "function allowance(address owner, address spender) external view returns (uint256)",
+  "function decimals() external view returns (uint8)",
+  "function symbol() external view returns (string)",
+];
+
+const ORACLE_ABI = [
+  "function getAssetPrice(address asset) external view returns (uint256)",
+];
+
+// ============================================================================
+// STATE
+// ============================================================================
+const state = {
+  provider: null,
+  signer: null,
+  account: null,
+  chainId: null,
+  pool: null,
+  oracle: null,
+  reserves: [],    // [{ symbol, address, decimals, supplyApy, borrowApy, ... }]
+  userData: null,
+};
+
+const WAD = 10n ** 18n;
+const BPS = 10000n;
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+function fmt(value, decimals = 4, prefix = "") {
+  if (value === null || value === undefined) return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  if (n === 0) return prefix + "0";
+  if (Math.abs(n) < 1e-4) return prefix + n.toExponential(2);
+  return prefix + n.toLocaleString("en-US", {
+    minimumFractionDigits: Math.min(decimals, 2),
+    maximumFractionDigits: decimals,
+  });
+}
+
+function fmtBig(value, decimals, displayDecimals = 4) {
+  if (value === null || value === undefined) return "—";
+  return fmt(Number(ethers.formatUnits(value, decimals)), displayDecimals);
+}
+
+function fmtUsd(wadValue) {
+  if (!wadValue || wadValue === 0n) return "$0";
+  const n = Number(ethers.formatUnits(wadValue, 18));
+  return "$" + fmt(n, 2);
+}
+
+function shortAddr(addr) {
+  if (!addr) return "";
+  return addr.slice(0, 6) + "…" + addr.slice(-4);
+}
+
+function showToast(title, body, level = "info", duration = 4000) {
+  const toast = document.getElementById("toast");
+  document.getElementById("toast-title").textContent = title;
+  document.getElementById("toast-body").innerHTML = body;
+  toast.className = "toast active " + level;
+  setTimeout(() => toast.classList.remove("active"), duration);
+}
+
+function hfColor(hf) {
+  if (hf === null || hf === undefined) return "var(--text-dim)";
+  if (hf >= 2.0) return "var(--good)";
+  if (hf >= 1.3) return "var(--accent)";
+  if (hf >= 1.0) return "var(--warn)";
+  return "var(--bad)";
+}
+
+// ============================================================================
+// WALLET CONNECTION
+// ============================================================================
+async function connectWallet() {
+  if (!window.ethereum) {
+    showToast("MetaMask not found", "Install the MetaMask browser extension to continue.", "err", 6000);
+    return;
+  }
+
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const accounts = await provider.send("eth_requestAccounts", []);
+    const signer = await provider.getSigner();
+    const network = await provider.getNetwork();
+
+    state.provider = provider;
+    state.signer = signer;
+    state.account = accounts[0];
+    state.chainId = Number(network.chainId);
+
+    if (state.chainId !== CONFIG.chainId) {
+      showToast(
+        "Wrong network",
+        `Connected to chain ${state.chainId}, expected ${CONFIG.chainId}. ` +
+        `Switch to Anvil Local in MetaMask.`,
+        "err", 8000
+      );
+    }
+
+    // Check that the user has filled in the config
+    if (CONFIG.pool === "0x0000000000000000000000000000000000000000" || CONFIG.assets.length === 0) {
+      showToast(
+        "Frontend not configured",
+        "Edit the CONFIG block in index.html — add your deployed contract addresses (search for 'CONFIG = {').",
+        "err", 10000
+      );
+      return;
+    }
+
+    state.pool = new ethers.Contract(CONFIG.pool, POOL_ABI, signer);
+    state.oracle = new ethers.Contract(CONFIG.oracle, ORACLE_ABI, signer);
+
+    document.getElementById("connect-btn").textContent = shortAddr(state.account);
+    document.getElementById("network-status").innerHTML =
+      `<span class="pulse-dot"></span><span>connected · chain ${state.chainId} · ${shortAddr(state.account)}</span>`;
+
+    // Enable action controls
+    document.querySelectorAll("button[disabled], select[disabled], input[disabled]")
+      .forEach(el => el.removeAttribute("disabled"));
+
+    showToast("Wallet connected", shortAddr(state.account), "ok");
+
+    await refreshAll();
+
+    // Auto-refresh every 10s
+    setInterval(refreshAll, 10_000);
+
+    // React to account/chain changes
+    window.ethereum.on("accountsChanged", () => location.reload());
+    window.ethereum.on("chainChanged", () => location.reload());
+
+  } catch (err) {
+    console.error(err);
+    showToast("Connection failed", err.message || String(err), "err");
+  }
+}
+
+// ============================================================================
+// LOADERS
+// ============================================================================
+async function loadReserves() {
+  const rows = [];
+  for (const a of CONFIG.assets) {
+    const erc20 = new ethers.Contract(a.address, ERC20_ABI, state.provider);
+    try {
+      const [reserveData, priceWad, walletBal] = await Promise.all([
+        state.pool.reserves(a.address),
+        state.oracle.getAssetPrice(a.address),
+        erc20.balanceOf(state.account),
+      ]);
+
+      const liqIdx = reserveData[0];
+      const bIdx = reserveData[1];
+      const totSupplyScaled = reserveData[3];
+      const totBorrowScaled = reserveData[4];
+      const ltvBps = Number(reserveData[6]);
+      const liqThreshBps = Number(reserveData[7]);
+      const reserveFactorBps = Number(reserveData[9]);
+
+      // Total supply / borrow in native token units
+      const totalSupplyTok = (totSupplyScaled * liqIdx) / 10n ** 27n;
+      const totalBorrowTok = (totBorrowScaled * bIdx) / 10n ** 27n;
+
+      let utilization = 0;
+      if (totalSupplyTok > 0n) {
+        utilization = Number(totalBorrowTok * 10000n / totalSupplyTok) / 10000;
+      }
+
+      rows.push({
+        ...a,
+        priceWad,
+        liqIdx, bIdx,
+        totalSupplyTok, totalBorrowTok,
+        utilization,
+        ltvBps, liqThreshBps, reserveFactorBps,
+        walletBalance: walletBal,
+      });
+    } catch (err) {
+      console.warn("Reserve load failed", a.symbol, err);
+      rows.push({ ...a, error: err.message });
+    }
+  }
+  state.reserves = rows;
+}
+
+async function loadUserData() {
+  const [accountData] = await Promise.all([state.pool.getUserAccountData(state.account)]);
+  state.userData = {
+    totalCollUsdWad: accountData[0],
+    totalDebtUsdWad: accountData[1],
+    availableBorrowsUsdWad: accountData[2],
+    liqThresholdBps: accountData[3],
+    ltvBps: accountData[4],
+    healthFactorWad: accountData[5],
+  };
+
+  // Per-asset positions
+  state.userPositions = [];
+  for (const a of CONFIG.assets) {
+    const ur = await state.pool.getUserReserveData(state.account, a.address);
+    state.userPositions.push({
+      ...a,
+      supply: ur[0],
+      debt: ur[1],
+      useAsCollateral: ur[2],
+    });
+  }
+}
+
+async function refreshAll() {
+  if (!state.account || !state.pool) return;
+  try {
+    await loadReserves();
+    await loadUserData();
+    renderReserves();
+    renderUserData();
+    renderAssetSelector();
+  } catch (err) {
+    console.error("Refresh failed:", err);
+  }
+}
+
+// ============================================================================
+// RENDERERS
+// ============================================================================
+function renderReserves() {
+  const grid = document.getElementById("reserves-grid");
+  if (state.reserves.length === 0) {
+    grid.innerHTML = `<div class="card p-5"><div class="ticker">— no reserves configured —</div></div>`;
+    return;
+  }
+
+  grid.innerHTML = state.reserves.map(r => {
+    if (r.error) {
+      return `
+        <div class="card p-5">
+          <div class="font-serif text-2xl">${r.symbol}</div>
+          <div class="ticker mt-2" style="color: var(--bad)">load error: ${r.error.slice(0, 40)}</div>
+        </div>`;
+    }
+    const priceUsd = Number(ethers.formatUnits(r.priceWad, 18));
+    const tvlUsd = Number(ethers.formatUnits(r.totalSupplyTok, r.decimals)) * priceUsd;
+    const borrowedUsd = Number(ethers.formatUnits(r.totalBorrowTok, r.decimals)) * priceUsd;
+    const util = r.utilization;
+    return `
+      <div class="card p-5 scanline">
+        <div class="flex items-baseline justify-between mb-3">
+          <div class="font-serif text-3xl" style="font-weight: 500;">${r.symbol}</div>
+          <div class="num text-sm" style="color: var(--text-muted)">$${fmt(priceUsd, 2)}</div>
+        </div>
+        <div class="tick-row">
+          <span class="label">supply (TVL)</span>
+          <span class="num">${fmt(tvlUsd, 0, "$")}</span>
+        </div>
+        <div class="tick-row">
+          <span class="label">borrowed</span>
+          <span class="num">${fmt(borrowedUsd, 0, "$")}</span>
+        </div>
+        <div class="tick-row">
+          <span class="label">utilization</span>
+          <span class="num">${(util * 100).toFixed(1)}%</span>
+        </div>
+        <div class="tick-row">
+          <span class="label">max LTV / liq.thr.</span>
+          <span class="num">${(r.ltvBps/100).toFixed(0)}% · ${(r.liqThreshBps/100).toFixed(0)}%</span>
+        </div>
+        <div class="tick-row">
+          <span class="label">reserve factor</span>
+          <span class="num">${(r.reserveFactorBps/100).toFixed(0)}%</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderUserData() {
+  if (!state.userData) return;
+  const u = state.userData;
+
+  const collUsd = Number(ethers.formatUnits(u.totalCollUsdWad, 18));
+  const debtUsd = Number(ethers.formatUnits(u.totalDebtUsdWad, 18));
+  const availUsd = Number(ethers.formatUnits(u.availableBorrowsUsdWad, 18));
+  const hf = Number(ethers.formatUnits(u.healthFactorWad, 18));
+
+  document.getElementById("user-coll").textContent = fmt(collUsd, 2, "$");
+  document.getElementById("user-coll-usd").textContent = "across all collateral";
+
+  document.getElementById("user-debt").textContent = fmt(debtUsd, 2, "$");
+  document.getElementById("user-debt-usd").textContent = "across all borrows";
+
+  document.getElementById("user-avail").textContent = fmt(availUsd, 2, "$");
+
+  const hfDisplay = hf > 999 ? "∞" : fmt(hf, 2);
+  const hfEl = document.getElementById("user-hf");
+  hfEl.textContent = hfDisplay;
+  hfEl.style.color = hfColor(hf);
+
+  const fillEl = document.getElementById("hf-bar-fill");
+  const cappedHf = Math.min(hf, 3);
+  fillEl.style.width = (cappedHf / 3 * 100) + "%";
+  fillEl.style.background = hfColor(hf);
+
+  // Per-asset breakdown
+  const posEl = document.getElementById("user-positions");
+  const hasAny = state.userPositions.some(p => p.supply > 0n || p.debt > 0n);
+  if (!hasAny) {
+    posEl.innerHTML = `<div class="ticker" style="color: var(--text-dim);">— no positions —</div>`;
+  } else {
+    posEl.innerHTML = state.userPositions
+      .filter(p => p.supply > 0n || p.debt > 0n)
+      .map(p => {
+        const sup = fmtBig(p.supply, p.decimals, 4);
+        const debt = fmtBig(p.debt, p.decimals, 4);
+        const parts = [];
+        if (p.supply > 0n) parts.push(`<span style="color: var(--good)">+ ${sup}</span> supplied`);
+        if (p.debt > 0n)   parts.push(`<span style="color: var(--warn)">− ${debt}</span> borrowed`);
+        return `
+          <div class="tick-row">
+            <span><span class="font-serif" style="font-size: 16px;">${p.symbol}</span></span>
+            <span class="num text-xs">${parts.join(" · ")}</span>
+          </div>
+        `;
+      }).join("");
+  }
+
+  // Wallet balances
+  const walEl = document.getElementById("wallet-balances");
+  walEl.innerHTML = state.reserves.map(r => `
+    <div class="tick-row">
+      <span><span class="font-serif" style="font-size: 16px;">${r.symbol}</span></span>
+      <span class="num">${fmtBig(r.walletBalance, r.decimals, 4)}</span>
+    </div>
+  `).join("");
+}
+
+function renderAssetSelector() {
+  const sel = document.getElementById("action-asset");
+  const currentVal = sel.value;
+  sel.innerHTML = CONFIG.assets.map(a => `<option value="${a.address}">${a.symbol}</option>`).join("");
+  if (currentVal && CONFIG.assets.find(a => a.address === currentVal)) {
+    sel.value = currentVal;
+  }
+}
+
+// ============================================================================
+// ACTIONS
+// ============================================================================
+function currentAsset() {
+  const addr = document.getElementById("action-asset").value;
+  return state.reserves.find(r => r.address === addr) || CONFIG.assets.find(a => a.address === addr);
+}
+
+function currentAmountUnits() {
+  const a = currentAsset();
+  if (!a) throw new Error("No asset selected");
+  const raw = document.getElementById("action-amount").value.trim();
+  if (!raw) throw new Error("Enter an amount");
+  return ethers.parseUnits(raw, a.decimals);
+}
+
+async function doApprove() {
+  const a = currentAsset();
+  const amt = currentAmountUnits();
+  showToast("Approving…", `${a.symbol} → pool`, "info");
+  const erc = new ethers.Contract(a.address, ERC20_ABI, state.signer);
+  const tx = await erc.approve(CONFIG.pool, amt);
+  await tx.wait();
+  showToast("Approved", `${a.symbol} spending limit set. You can now deposit or repay.`, "ok");
+  await refreshAll();
+}
+
+async function doDeposit() {
+  const a = currentAsset();
+  const amt = currentAmountUnits();
+  showToast("Depositing…", `${ethers.formatUnits(amt, a.decimals)} ${a.symbol}`, "info");
+  const tx = await state.pool.deposit(a.address, amt);
+  await tx.wait();
+  showToast("Deposited", `${ethers.formatUnits(amt, a.decimals)} ${a.symbol} now earning yield.`, "ok");
+  await refreshAll();
+}
+
+async function doWithdraw() {
+  const a = currentAsset();
+  const amt = currentAmountUnits();
+  showToast("Withdrawing…", `${ethers.formatUnits(amt, a.decimals)} ${a.symbol}`, "info");
+  const tx = await state.pool.withdraw(a.address, amt);
+  await tx.wait();
+  showToast("Withdrawn", `${ethers.formatUnits(amt, a.decimals)} ${a.symbol} back in your wallet.`, "ok");
+  await refreshAll();
+}
+
+async function doBorrow() {
+  const a = currentAsset();
+  const amt = currentAmountUnits();
+  showToast("Borrowing…", `${ethers.formatUnits(amt, a.decimals)} ${a.symbol}`, "info");
+  const tx = await state.pool.borrow(a.address, amt);
+  await tx.wait();
+  showToast("Borrowed", `${ethers.formatUnits(amt, a.decimals)} ${a.symbol} sent to your wallet. Watch your HF.`, "ok");
+  await refreshAll();
+}
+
+async function doRepay() {
+  const a = currentAsset();
+  const amt = currentAmountUnits();
+  showToast("Repaying…", `${ethers.formatUnits(amt, a.decimals)} ${a.symbol}`, "info");
+  const tx = await state.pool.repay(a.address, amt);
+  await tx.wait();
+  showToast("Repaid", `${ethers.formatUnits(amt, a.decimals)} ${a.symbol} debt reduced.`, "ok");
+  await refreshAll();
+}
+
+async function doMax() {
+  const a = currentAsset();
+  if (!a) return;
+  const r = state.reserves.find(x => x.address === a.address);
+  if (r) {
+    document.getElementById("action-amount").value = ethers.formatUnits(r.walletBalance, a.decimals);
+  }
+}
+
+// Wire up
+async function wrap(fn) {
+  try { await fn(); }
+  catch (err) {
+    console.error(err);
+    const msg = err.shortMessage || err.reason || err.message || String(err);
+    showToast("Transaction failed", msg, "err", 7000);
+  }
+}
+
+document.getElementById("connect-btn").addEventListener("click", connectWallet);
+document.getElementById("approve-btn").addEventListener("click", () => wrap(doApprove));
+document.getElementById("deposit-btn").addEventListener("click", () => wrap(doDeposit));
+document.getElementById("withdraw-btn").addEventListener("click", () => wrap(doWithdraw));
+document.getElementById("borrow-btn").addEventListener("click", () => wrap(doBorrow));
+document.getElementById("repay-btn").addEventListener("click", () => wrap(doRepay));
+document.getElementById("max-btn").addEventListener("click", () => wrap(doMax));
+
+// Greeting
+console.log("%cRISK·ENGINE — Lending Terminal", "color:#c8ff00;font-size:18px;font-family:serif;");
+console.log("%cFill the CONFIG block with deployed addresses, then click Connect Wallet.", "color:#8a857b;");
+</script>
+
+</body>
+</html>
